@@ -1,6 +1,8 @@
-from flask import Flask, render_template, request, redirect, session, jsonify
+from flask import Flask, render_template, request, redirect, session, jsonify, send_file
 from datetime import datetime
-import sqlite3, os, base64
+import sqlite3, os, base64, csv, psycopg2
+import pytz
+
 
 app = Flask(__name__)
 app.secret_key = "fabledtech"
@@ -25,14 +27,20 @@ def init_db():
                     longitude TEXT,
                     photo TEXT)''')
     # Default users
-    c.execute("INSERT OR IGNORE INTO users VALUES ('F001', 'Ravi', 'Ravi123', 'Chif Oprating Officer')")
-    c.execute("INSERT OR IGNORE INTO users VALUES ('F002', 'Rajendra', 'Raj123', 'Chif Marketing Officer')")
-    c.execute("INSERT OR IGNORE INTO users VALUES ('admin', 'Admin User', 'admin123', 'admin')")
+    c.execute("INSERT OR IGNORE INTO users VALUES ('RAVI', 'Ravi', 'Ravi123', 'Chif Oprating Officer')")
+    c.execute("INSERT OR IGNORE INTO users VALUES ('RAJENDRA', 'Rajendra', 'Raj123', 'Chif Marketing Officer')")
+    c.execute("INSERT OR IGNORE INTO users VALUES ('SHUBHAM', 'Shubham', 'Shubham123', 'Account')")
+    c.execute("INSERT OR IGNORE INTO users VALUES ('ADMIN', 'Admin User', 'admin123', 'admin')")
+
     conn.commit()
     conn.close()
 
 init_db()
 os.makedirs("static/photos", exist_ok=True)
+
+def get_indian_time():
+    india = pytz.timezone('Asia/Kolkata')
+    return datetime.now(india)
 
 # ---------- ROUTES ----------
 @app.route('/')
@@ -74,8 +82,13 @@ def checkin():
     data = request.json
     emp_id = session['emp_id']
     name = session['name']
-    today = datetime.now().strftime("%Y-%m-%d")
-    current_time = datetime.now().strftime("%H:%M:%S")
+
+    # ✅ Use Indian timezone for real local time
+    india = pytz.timezone('Asia/Kolkata')
+    now = datetime.now(india)
+    today = now.strftime("%Y-%m-%d")
+    current_time = now.strftime("%H:%M:%S")  # ✅ FIXED (was now_india)
+
     lat = data.get('latitude')
     lon = data.get('longitude')
     photo_data = data.get('photo')
@@ -94,23 +107,27 @@ def checkin():
     record = c.fetchone()
 
     if not record:
-        c.execute("""INSERT INTO attendance 
-                     (emp_id, date, check_in, latitude, longitude, photo) 
-                     VALUES (?, ?, ?, ?, ?, ?)""",
-                  (emp_id, today, current_time, lat, lon, photo_filename))
+        c.execute("""
+            INSERT INTO attendance
+            (emp_id, date, check_in, latitude, longitude, photo)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (emp_id, today, current_time, lat, lon, photo_filename))
         conn.commit()
-        message = f"✅ {name} checked in at {current_time}"
+        message = f"✅ {name} checked in at {current_time} (IST)"
     elif not record[4]:
-        c.execute("""UPDATE attendance 
-                     SET check_out=?, latitude=?, longitude=?, photo=? 
-                     WHERE emp_id=? AND date=?""",
-                  (current_time, lat, lon, photo_filename, emp_id, today))
+        c.execute("""
+            UPDATE attendance
+            SET check_out=?, latitude=?, longitude=?, photo=?
+            WHERE emp_id=? AND date=?
+        """, (current_time, lat, lon, photo_filename, emp_id, today))
         conn.commit()
-        message = f"👋 {name} checked out at {current_time}"
+        message = f"👋 {name} checked out at {current_time} (IST)"
     else:
         message = "⚠️ You already checked out today."
+
     conn.close()
     return jsonify({"message": message})
+
 
 @app.route('/admin')
 def admin():
@@ -120,6 +137,29 @@ def admin():
     df = conn.execute("SELECT * FROM attendance").fetchall()
     conn.close()
     return render_template('admin.html', records=df)
+
+
+@app.route('/download', methods=['GET'])
+def download_csv():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM attendance")
+    rows = c.fetchall()
+    conn.close()
+
+
+    # Ensure static folder exists
+    if not os.path.exists('static'):
+        os.makedirs('static')
+
+    # Write CSV file
+    csv_file = os.path.join('static', 'attendance.csv')
+    with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['ID', 'Username', 'Date', 'Check-in Time', 'Check-out Time', 'Image Path'])
+        writer.writerows(rows)
+
+    return send_file(csv_file, as_attachment=True, download_name='attendance.csv')
 
 @app.route('/logout')
 def logout():
