@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, session, jsonify, send_file
 from datetime import datetime
-import sqlite3, os, base64, csv, psycopg2
+import sqlite3, os, base64, csv
 import pytz
 
 
@@ -168,3 +168,4 @@ def logout():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
