@@ -5,39 +5,63 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script>
     let videoStream;
+
     function startCamera() {
         navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => { videoStream = stream; document.getElementById('video').srcObject = stream; })
-            .catch(()=> alert("❌ Camera access denied!"));
+            .then(stream => { 
+                videoStream = stream; 
+                document.getElementById('video').srcObject = stream; 
+            })
+            .catch(() => alert("❌ Camera access denied!"));
     }
 
     function captureAndSend() {
         const video = document.getElementById('video');
         const canvas = document.createElement('canvas');
-        canvas.width=320; canvas.height=240;
-        canvas.getContext('2d').drawImage(video,0,0,320,240);
+        canvas.width = 320; 
+        canvas.height = 240;
+        canvas.getContext('2d').drawImage(video, 0, 0, 320, 240);
         const photo = canvas.toDataURL('image/jpeg');
 
-        if(navigator.geolocation){
-            navigator.geolocation.getCurrentPosition(pos=>{
-                fetch("/checkin",{
-                    method:"POST",
-                    headers:{"Content-Type":"application/json"},
-                    body:JSON.stringify({
-                        latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude,
-                        photo: photo
-                    })
-                }).then(r=>r.json()).then(res=>{
-                    document.getElementById("msg").innerText=res.message;
-                    stopCamera();
-                });
-            },()=>alert("❌ Location access denied!"));
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                sendAttendance(pos.coords.latitude, pos.coords.longitude, photo);
+            }, () => {
+                // Fallback if location denied
+                alert("❌ Location access denied! Using default coordinates (Pune).");
+                sendAttendance(18.5204, 73.8567, photo); // Pune coordinates
+            });
+        } else {
+            alert("Geolocation not supported. Using default coordinates.");
+            sendAttendance(18.5204, 73.8567, photo);
         }
     }
 
-    function stopCamera(){ if(videoStream) videoStream.getTracks().forEach(t=>t.stop()); }
-    window.onload=startCamera;
+    function sendAttendance(lat, lon, photo) {
+        fetch("/checkin", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                latitude: lat,
+                longitude: lon,
+                photo: photo
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            document.getElementById("msg").innerText = res.message;
+            stopCamera();
+        })
+        .catch(() => {
+            alert("⚠️ Error sending attendance!");
+        });
+    }
+
+    function stopCamera() {
+        if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+    }
+
+    window.onload = startCamera;
     </script>
 </head>
 <body class="text-center mt-5">
